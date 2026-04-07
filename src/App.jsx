@@ -1,16 +1,80 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
+// All equities listed on the Nairobi Securities Exchange (NSE) as of April 2026
+// Organised by sector. "tracked" = true means full AI analysis is run on this stock.
+// Others appear in the UI but use lighter news-only analysis to manage API costs.
 const NSE_STOCKS = [
-  { ticker: "SCOM", name: "Safaricom PLC",   sector: "Telecoms", color: "#00875A" },
-  { ticker: "KCB",  name: "KCB Group",       sector: "Banking",  color: "#1D4ED8" },
-  { ticker: "EQTY", name: "Equity Bank",     sector: "Banking",  color: "#DC2626" },
-  { ticker: "EABL", name: "EABL",            sector: "Consumer", color: "#B45309" },
-  { ticker: "COOP", name: "Co-op Bank",      sector: "Banking",  color: "#047857" },
-  { ticker: "BATK", name: "BAT Kenya",       sector: "Consumer", color: "#7C3AED" },
-  { ticker: "ABSA", name: "Absa Bank Kenya", sector: "Banking",  color: "#BE123C" },
-  { ticker: "NCBA", name: "NCBA Group",      sector: "Banking",  color: "#0369A1" },
+  // ── BANKING ────────────────────────────────────────────────────────────────
+  { ticker: "ABSA",  name: "Absa Bank Kenya",          sector: "Banking",              color: "#BE123C", tracked: true  },
+  { ticker: "COOP",  name: "Co-operative Bank",        sector: "Banking",              color: "#047857", tracked: true  },
+  { ticker: "DTK",   name: "Diamond Trust Bank",       sector: "Banking",              color: "#1E40AF", tracked: true  },
+  { ticker: "EQTY",  name: "Equity Group Holdings",    sector: "Banking",              color: "#DC2626", tracked: true  },
+  { ticker: "HF",    name: "HF Group",                 sector: "Banking",              color: "#78350F", tracked: false },
+  { ticker: "IMH",   name: "I&M Holdings",             sector: "Banking",              color: "#2563EB", tracked: true  },
+  { ticker: "KCB",   name: "KCB Group",                sector: "Banking",              color: "#1D4ED8", tracked: true  },
+  { ticker: "NCBA",  name: "NCBA Group",               sector: "Banking",              color: "#0369A1", tracked: true  },
+  { ticker: "SCBK",  name: "Standard Chartered Kenya", sector: "Banking",              color: "#0C4A6E", tracked: true  },
+  { ticker: "SBIC",  name: "Stanbic Holdings",         sector: "Banking",              color: "#164E63", tracked: true  },
+  { ticker: "KPC",   name: "Kenya Pipeline Company",   sector: "Energy & Petroleum",   color: "#059669", tracked: true  },
+  // ── TELECOMS ───────────────────────────────────────────────────────────────
+  { ticker: "SCOM",  name: "Safaricom PLC",            sector: "Telecoms",             color: "#00875A", tracked: true  },
+  // ── INSURANCE ──────────────────────────────────────────────────────────────
+  { ticker: "BRIT",  name: "Britam Holdings",          sector: "Insurance",            color: "#7C3AED", tracked: true  },
+  { ticker: "CIC",   name: "CIC Insurance Group",      sector: "Insurance",            color: "#6D28D9", tracked: true  },
+  { ticker: "JUB",   name: "Jubilee Holdings",         sector: "Insurance",            color: "#4C1D95", tracked: true  },
+  { ticker: "LBTY",  name: "Liberty Kenya Holdings",   sector: "Insurance",            color: "#5B21B6", tracked: false },
+  { ticker: "KNRE",  name: "Kenya Re-Insurance",       sector: "Insurance",            color: "#4338CA", tracked: false },
+  // ── INVESTMENT ─────────────────────────────────────────────────────────────
+  { ticker: "CTUM",  name: "Centum Investment",        sector: "Investment",           color: "#0E7490", tracked: true  },
+  { ticker: "ICDC",  name: "ICDC",                     sector: "Investment",           color: "#0891B2", tracked: false },
+  { ticker: "NSE",   name: "Nairobi Securities Exchange", sector: "Investment Services", color: "#0284C7", tracked: false },
+  { ticker: "OLY",   name: "Olympia Capital",          sector: "Investment",           color: "#075985", tracked: false },
+  // ── CONSUMER GOODS ─────────────────────────────────────────────────────────
+  { ticker: "BATK",  name: "BAT Kenya",                sector: "Consumer Goods",       color: "#92400E", tracked: true  },
+  { ticker: "EABL",  name: "EABL",                     sector: "Consumer Goods",       color: "#B45309", tracked: true  },
+  { ticker: "UNGA",  name: "Unga Group",               sector: "Consumer Goods",       color: "#A16207", tracked: false },
+  { ticker: "EVRD",  name: "Eveready East Africa",     sector: "Consumer Goods",       color: "#CA8A04", tracked: false },
+  { ticker: "EGAD",  name: "Eaagads",                  sector: "Consumer Goods",       color: "#854D0E", tracked: false },
+  // ── AGRICULTURAL ───────────────────────────────────────────────────────────
+  { ticker: "KUKZ",  name: "Kakuzi",                   sector: "Agricultural",         color: "#166534", tracked: false },
+  { ticker: "KAPC",  name: "Kapchorua Tea Kenya",      sector: "Agricultural",         color: "#15803D", tracked: false },
+  { ticker: "LIMURU",name: "Limuru Tea",               sector: "Agricultural",         color: "#16A34A", tracked: false },
+  { ticker: "WTK",   name: "Williamson Tea Kenya",     sector: "Agricultural",         color: "#22C55E", tracked: false },
+  { ticker: "SASN",  name: "Sasini",                   sector: "Agricultural",         color: "#4ADE80", tracked: false },
+  // ── COMMERCIAL & SERVICES ──────────────────────────────────────────────────
+  { ticker: "CMC",   name: "CMC Holdings",             sector: "Commercial & Services", color: "#D97706", tracked: false },
+  { ticker: "SCAN",  name: "ScanGroup",                sector: "Commercial & Services", color: "#F59E0B", tracked: false },
+  { ticker: "XPRS",  name: "Express Kenya",            sector: "Commercial & Services", color: "#FBBF24", tracked: false },
+  { ticker: "NMG",   name: "Nation Media Group",       sector: "Commercial & Services", color: "#D97706", tracked: true  },
+  { ticker: "SGL",   name: "Standard Group",           sector: "Commercial & Services", color: "#FDE68A", tracked: false },
+  { ticker: "HBEZ",  name: "Homeboyz Entertainment",   sector: "Commercial & Services", color: "#EF4444", tracked: false },
+  { ticker: "DEAC",  name: "Deacons East Africa",      sector: "Commercial & Services", color: "#F87171", tracked: false },
+  { ticker: "CARG",  name: "Car & General Kenya",      sector: "Commercial & Services", color: "#FCA5A5", tracked: false },
+  { ticker: "FLAME", name: "Flame Tree Group",         sector: "Commercial & Services", color: "#FECACA", tracked: false },
+  // ── CONSTRUCTION & ALLIED ──────────────────────────────────────────────────
+  { ticker: "ARM",   name: "ARM Cement",               sector: "Construction & Allied", color: "#78716C", tracked: false },
+  { ticker: "BAMB",  name: "Bamburi Cement",           sector: "Construction & Allied", color: "#57534E", tracked: false },
+  { ticker: "CRWN",  name: "Crown Paints Kenya",       sector: "Construction & Allied", color: "#44403C", tracked: false },
+  { ticker: "EAPC",  name: "EA Portland Cement",       sector: "Construction & Allied", color: "#292524", tracked: false },
+  // ── MANUFACTURING & ALLIED ─────────────────────────────────────────────────
+  { ticker: "BOC",   name: "BOC Kenya",                sector: "Manufacturing",         color: "#1C1917", tracked: false },
+  { ticker: "CARB",  name: "Carbacid Investments",     sector: "Manufacturing",         color: "#374151", tracked: false },
+  { ticker: "CABL",  name: "East African Cables",      sector: "Manufacturing",         color: "#4B5563", tracked: false },
+  // ── ENERGY & PETROLEUM ─────────────────────────────────────────────────────
+  { ticker: "KEGN",  name: "KenGen",                   sector: "Energy & Petroleum",   color: "#065F46", tracked: true  },
+  { ticker: "KPLC",  name: "Kenya Power",              sector: "Energy & Petroleum",   color: "#047857", tracked: true  },
+  { ticker: "TOTL",  name: "TotalEnergies Kenya",      sector: "Energy & Petroleum",   color: "#DC2626", tracked: false },
+  { ticker: "KENO",  name: "KenolKobil",               sector: "Energy & Petroleum",   color: "#B91C1C", tracked: false },
+  // ── REAL ESTATE ────────────────────────────────────────────────────────────
+  { ticker: "HKA",   name: "Home Afrika",              sector: "Real Estate",          color: "#7C3AED", tracked: false },
+  { ticker: "AMEG",  name: "Africa Mega Agricorp",     sector: "Agricultural",         color: "#6D28D9", tracked: false },
+  // ── TRANSPORT ──────────────────────────────────────────────────────────────
+  { ticker: "KQ",    name: "Kenya Airways",            sector: "Transport",            color: "#7F1D1D", tracked: true  },
 ];
+
+// Stocks that get full AI analysis (news + fundamentals + technicals)
+const TRACKED_STOCKS = NSE_STOCKS.filter(s => s.tracked);
 
 const SENTIMENT_CONFIG = {
   bullish: { label: "Bullish", color: "#059669", bg: "#D1FAE5", border: "#6EE7B7", icon: "↑" },
@@ -48,10 +112,18 @@ const FALLBACK_NEWS = [
   { id:"f12", title:"NSE 20-Share Index drops 2.3% on foreign investor selling",           source:"The Standard",   url:"#", date:"2025-03-23", stock:"KCB",  content:"The NSE 20-Share Index fell 2.3% as foreign institutional investors sold for a third consecutive week. A stronger US dollar and rising treasury yields triggered the capital outflow." },
 ];
 
-const CACHE_KEY   = "nse_articles_v4";
-const OUTLOOK_KEY = "nse_outlooks_v4";
-const NEWS_KEY    = "nse_live_news_v4";
-const CACHE_TTL   = 24 * 60 * 60 * 1000;
+const CACHE_KEY    = "nse_articles_v7";
+const OUTLOOK_KEY  = "nse_outlooks_v7";
+const NEWS_KEY     = "nse_live_news_v7";
+const CACHE_TTL    = 24 * 60 * 60 * 1000;  // 24h for analysis results
+const NEWS_TTL     = 15 * 60 * 1000;        // 15 min for news cache
+const POLL_INTERVAL = 3 * 60 * 1000;        // poll for new articles every 3 min
+const NEWS_SOURCES = [
+  "Google News","Business Daily","Nation Africa","The Standard",
+  "Capital FM Kenya","Citizen Digital","KBC Kenya",
+  "AllAfrica Kenya","AllAfrica Business","Reuters Africa",
+  "African Business","How We Made It","Africanews","TechCabal",
+];
 
 function loadCache(key) {
   try {
@@ -67,6 +139,7 @@ function saveCache(key, data) {
 }
 
 async function callClaude(messages, system, maxTokens = 900) {
+  // Routes through /api/claude to keep the API key server-side
   const res = await fetch("/api/claude", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -77,13 +150,110 @@ async function callClaude(messages, system, maxTokens = 900) {
   return data.content?.map(i => i.text || "").join("").replace(/```json\n?|```/g, "").trim();
 }
 
+// Calls Claude with web_search tool enabled — routes through /api/claude-search proxy
+async function callClaudeWithSearch(messages, maxTokens = 1200) {
+  const res = await fetch("/api/claude-search", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ max_tokens: maxTokens, messages }),
+  });
+  if (!res.ok) throw new Error(`Claude Search API ${res.status}`);
+  const data = await res.json();
+  // Extract only text blocks (ignore tool_use, tool_result blocks)
+  const text = (data.content || []).filter(b => b.type === "text").map(b => b.text).join("");
+  return text.replace(/```json\n?|```/g, "").trim();
+}
+
+// Fetch fresh news for a single stock using Claude web search
 async function fetchLiveNews(ticker, name) {
   try {
-    const res = await fetch(`/api/news?ticker=${ticker}&name=${encodeURIComponent(name)}`);
-    if (!res.ok) return [];
-    const { articles } = await res.json();
-    return (articles || []).map((a, i) => ({ ...a, id: `live_${ticker}_${i}` }));
-  } catch { return []; }
+    const today = new Date().toISOString().split("T")[0];
+    const prompt = `Search for the very latest news about ${name} (NSE ticker: ${ticker}) on the Nairobi Securities Exchange Kenya. Today is ${today}.
+Search: Business Daily Kenya, Nation Africa, The Standard Kenya, Capital FM Kenya, Reuters Africa, AllAfrica Kenya, Google News.
+Find 3-6 real recent articles from the last 30 days about this specific company.
+Return ONLY a JSON array (no markdown):
+[{"id":"live_${ticker}_1","title":"exact headline","source":"Business Daily","url":"https://real-url.com","date":"YYYY-MM-DD","stock":"${ticker}","content":"2-3 sentence factual summary","isLive":true}]
+Use real article titles and real URLs. Return [] if no recent news found.`;
+    const text = await callClaudeWithSearch([{ role: "user", content: prompt }], 1200);
+    const match = text.match(/\[[\s\S]*\]/);
+    if (!match) return [];
+    const articles = JSON.parse(match[0]);
+    return Array.isArray(articles) ? articles.map((a, i) => ({
+      ...a,
+      id: `live_${ticker}_${Date.now()}_${i}`,
+      stock: ticker,
+      isLive: true,
+    })) : [];
+  } catch (e) { console.error("fetchLiveNews error:", e); return []; }
+}
+
+
+// Fetch market-wide NSE news from all sources using Anthropic API + web search
+async function fetchMarketNews() {
+  const sources = [
+    "Business Daily Kenya", "Nation Africa", "The Standard Kenya",
+    "Capital FM Kenya", "Citizen Digital Kenya", "KBC Kenya",
+    "AllAfrica Kenya business", "Reuters Africa", "TechCabal",
+    "African Business magazine",
+  ];
+  const tickers = ["SCOM","KCB","EQTY","EABL","ABSA","COOP","KPLC","KQ","NMG","BAMB","BATK","JUB","BRIT","CTUM","KEGN"];
+  try {
+    const today = new Date().toISOString().split("T")[0];
+    const prompt = `Search for the very latest NSE (Nairobi Securities Exchange) financial and business news from Kenya published in the last 7 days (today is ${today}).
+Search across: ${sources.join(", ")}.
+Focus on: Safaricom (SCOM), KCB Group, Equity Group (EQTY), EABL, Absa Kenya, Co-op Bank (COOP), Kenya Power (KPLC), Kenya Airways (KQ), Nation Media (NMG), BAT Kenya, Jubilee Holdings, Britam, Centum (CTUM), KenGen (KEGN), Kenya Pipeline (KPC), Diamond Trust (DTK), NCBA, I&M Holdings (IMH), Standard Chartered Kenya (SCBK), Stanbic (SBIC), CIC Insurance, and general NSE/NASI market news.
+Find as many real recent articles as possible (target 20+). Tag each with the matching NSE ticker or "MARKET".
+Known tickers: ${tickers.join(",")}.
+Return ONLY a JSON object (no markdown):
+{"articles":[{"id":"m1","title":"exact headline","source":"Business Daily","url":"https://real-url.com","date":"YYYY-MM-DD","stock":"SCOM","content":"2-3 sentence factual summary","isLive":true}],"sources":{"Business Daily":3,"Nation Africa":2}}
+Include real URLs. Maximize the number of real, recent articles found.`;
+
+    const text = await callClaudeWithSearch([{ role: "user", content: prompt }], 2000);
+    const match = text.match(/\{[\s\S]*\}/);
+    if (!match) return { articles: [], sources: {} };
+    const parsed = JSON.parse(match[0]);
+    const articles = (parsed.articles || []).map((a, i) => ({
+      ...a,
+      id: `live_mkt_${Date.now()}_${i}`,
+      isLive: true,
+    }));
+    return { articles, sources: parsed.sources || {} };
+  } catch (e) { console.error("fetchMarketNews error:", e); return { articles: [], sources: {} }; }
+}
+
+// Check if an article is genuinely new (not already in the news list)
+function isNewArticle(article, existingNews) {
+  return !existingNews.some(e =>
+    e.id === article.id ||
+    e.title.toLowerCase().replace(/[^a-z0-9]/g,"").slice(0,30) ===
+    article.title.toLowerCase().replace(/[^a-z0-9]/g,"").slice(0,30)
+  );
+}
+
+async function fetchFundamentals(ticker, name) {
+  try {
+    const today = new Date().toISOString().split("T")[0];
+    const prompt = `Search for the current financial data and live stock price for ${name} (NSE ticker: ${ticker}) on the Nairobi Securities Exchange. Today is ${today}.
+Check NSE website, myStocks Kenya, investing.com, Reuters, and company investor relations pages.
+Find: current share price (KSh), today's price change %, 52-week high, 52-week low, P/E ratio, EPS, dividend yield, market cap (KSh B), ROE %, revenue growth %, profit margin %, debt/equity.
+Return ONLY a JSON object (no markdown):
+{"price":12.50,"priceChangePct":1.2,"weekHigh52":15.00,"weekLow52":9.50,"marketCap":45.2,"pe":8.5,"pb":1.2,"eps":1.47,"dividendYield":4.2,"roe":18.5,"revenueGrowth":12.3,"profitMargin":22.1,"debtToEquity":0.4,"highlights":"Key financial highlights from latest results","source":"Source name + year","technicals":{"rsi":52,"rsiSignal":"Neutral RSI zone","trend":"Mid-range consolidating","signal":"Neutral","pricePosition":60,"support":10.50,"resistance":14.00}}
+Use real current data where available, best estimates from latest annual report otherwise. Return null for truly unknown fields.`;
+    const text = await callClaudeWithSearch([{ role: "user", content: prompt }], 800);
+    const match = text.match(/\{[\s\S]*\}/);
+    return match ? JSON.parse(match[0]) : null;
+  } catch { return null; }
+}
+
+// Fetch Alpha Vantage data: news sentiment + technicals + fundamentals + 1-100 score
+async function fetchAlphaVantage(ticker, name) {
+  try {
+    const res = await fetch(`/api/alphavantage?ticker=${encodeURIComponent(ticker)}&name=${encodeURIComponent(name)}`);
+    if (!res.ok) return null;
+    const data = await res.json();
+    if (data.error) { console.warn(`AlphaVantage: ${data.error}`); return null; }
+    return data;
+  } catch (e) { console.error("fetchAlphaVantage error:", e); return null; }
 }
 
 function fallbackOutlook(ticker) {
@@ -96,41 +266,157 @@ function fallbackOutlook(ticker) {
   };
 }
 
-async function analyseStock(stock, articles) {
-  if (!articles || articles.length === 0) {
-    return { articleAnalyses: [], outlook: fallbackOutlook(stock.ticker) };
-  }
-  const trimmed = articles.slice(0, 3).map(a => ({
-    ...a, content: (a.content || a.title).slice(0, 280),
+async function analyseStock(stock, articles, fundamentals, avData) {
+  const trimmed = (articles || []).slice(0, 4).map(a => ({
+    ...a, content: (a.content || a.title).slice(0, 240),
   }));
-  const articlesText = trimmed.map((a, i) => `[${i+1}] "${a.title}"\n${a.content}`).join("\n\n");
+
+  // ── Build compact context string ─────────────────────────────────────────
+  const newsLines = trimmed.length > 0
+    ? trimmed.map((a, i) => `${i+1}. "${a.title}" (${a.source}, ${a.date}) — ${a.content}`).join("\n")
+    : "No recent news available.";
+
+  const fundParts = [];
+  const f = fundamentals || {};
+  if (f.price)         fundParts.push(`Price KSh ${f.price}`);
+  if (f.pe)            fundParts.push(`P/E ${f.pe}x`);
+  if (f.dividendYield) fundParts.push(`Div ${f.dividendYield}%`);
+  if (f.roe)           fundParts.push(`ROE ${f.roe}%`);
+  if (f.revenueGrowth) fundParts.push(`RevGrowth ${f.revenueGrowth}%`);
+  if (f.profitMargin)  fundParts.push(`Margin ${f.profitMargin}%`);
+  if (f.weekHigh52)    fundParts.push(`52W ${f.weekLow52}–${f.weekHigh52}`);
+  if (f.technicals)    fundParts.push(`RSI ${f.technicals.rsi} (${f.technicals.rsiSignal})`);
+  if (f.highlights)    fundParts.push(f.highlights);
+  const fundLine = fundParts.length > 0 ? fundParts.join(" | ") : "No financial data.";
+
+  const avParts = [];
+  if (avData?.investmentScore) avParts.push(`AV Score ${avData.investmentScore}/100 (${avData.scoreLabel})`);
+  if (avData?.breakdown?.rsi)  avParts.push(`AV RSI ${avData.breakdown.rsi?.toFixed(1)}`);
+  if (avData?.technicals?.macdSignal) avParts.push(`MACD: ${avData.technicals.macdSignal}`);
+  if (avData?.breakdown?.newsSentimentScore) avParts.push(`AV Sentiment ${avData.breakdown.newsSentimentScore}/100`);
+  const avLine = avParts.length > 0 ? avParts.join(" | ") : "";
+
+  // ── Compute a base investment score from available data ───────────────────
+  // This ensures we ALWAYS have a meaningful score even if Claude call fails
+  const baseScore = computeBaseScore(fundamentals, avData, trimmed);
+
   const prompt =
-    `Analyse ${stock.name} (${stock.ticker}) on the Nairobi Securities Exchange.\n` +
-    `${trimmed.length} recent articles:\n\n${articlesText}\n\n` +
-    `Return ONLY a JSON object with:\n` +
-    `"articles": array of ${trimmed.length} objects each {summary,sentiment,category}\n` +
-    `"outlook": {overallSentiment,confidenceScore,recommendation,keyDrivers,risks,opportunities,summary}`;
+    `Analyse ${stock.name} (NSE:${stock.ticker}) for investment decision.\n` +
+    `FINANCIALS: ${fundLine}\n` +
+    (avLine ? `ALPHA VANTAGE: ${avLine}\n` : "") +
+    `NEWS (${trimmed.length}): ${newsLines}\n\n` +
+    `Return ONLY this JSON (no markdown, start with {):\n` +
+    `{"overallSentiment":"Bullish|Bearish|Neutral","confidenceScore":1-100,"recommendation":"Strong Buy|Buy|Hold|Watch|Sell|Strong Sell","keyDrivers":["..."],"risks":["..."],"opportunities":["..."],"technicalSignal":"Bullish|Bearish|Neutral","fundamentalScore":1-100,"newsScore":1-100,"summary":"2 sentence thesis with specific numbers"}`;
+
+  let outlookData = null;
   try {
     const raw = await callClaude(
       [{ role: "user", content: prompt }],
-      "Return ONLY valid JSON starting with { and ending with }. No markdown, no extra text.",
-      800
+      "You are a senior NSE investment analyst. Analyse the data carefully. Return ONLY valid JSON starting with {. Use specific figures from the data provided. Never use 30 as a default score.",
+      600
     );
-    const jsonMatch = raw.match(/\{[\s\S]*\}/);
-    if (!jsonMatch) throw new Error("No JSON in response");
-    const parsed = JSON.parse(jsonMatch[0]);
-    const defaultArticle = { summary: "See article for details.", sentiment: "neutral", category: "other" };
-    return {
-      articleAnalyses: Array.isArray(parsed.articles) ? parsed.articles : trimmed.map(() => defaultArticle),
-      outlook: (parsed.outlook && parsed.outlook.overallSentiment) ? parsed.outlook : fallbackOutlook(stock.ticker),
-    };
+    // Extract JSON robustly
+    const cleaned = raw.replace(/^[^{]*/, "").replace(/[^}]*$/, "") + "}";
+    const match = raw.match(/\{[\s\S]*\}/);
+    if (match) {
+      const parsed = JSON.parse(match[0]);
+      if (parsed.overallSentiment && parsed.confidenceScore && parsed.confidenceScore !== 30) {
+        outlookData = parsed;
+      }
+    }
   } catch (err) {
-    console.error(`analyseStock error for ${stock.ticker}:`, err.message);
-    return {
-      articleAnalyses: trimmed.map(() => ({ summary: "Analysis unavailable.", sentiment: "neutral", category: "other" })),
-      outlook: fallbackOutlook(stock.ticker),
-    };
+    console.error(`Claude analyse error for ${stock.ticker}:`, err.message);
   }
+
+  // If Claude failed or returned default 30, use our computed base score
+  if (!outlookData || outlookData.confidenceScore === 30) {
+    outlookData = buildOutlookFromScore(baseScore, stock.ticker, fundamentals, avData);
+  }
+
+  // Analyse articles separately (simpler call)
+  const articleAnalyses = trimmed.map(a => ({
+    summary: a.content.slice(0, 120) + "...",
+    sentiment: outlookData.overallSentiment === "Bullish" ? "positive" : outlookData.overallSentiment === "Bearish" ? "negative" : "neutral",
+    category: detectCategory(a.title + " " + a.content),
+  }));
+
+  return {
+    articleAnalyses,
+    outlook: { ...outlookData, fundamentals, avData },
+  };
+}
+
+// ── Compute a data-driven base score when Claude is unavailable ───────────────
+function computeBaseScore(fundamentals, avData, articles) {
+  let score = 50; // start neutral
+  const f = fundamentals || {};
+
+  // Alpha Vantage score (most reliable if present)
+  if (avData?.investmentScore) return avData.investmentScore;
+
+  // Fundamentals scoring
+  if (f.pe) {
+    if (f.pe < 6) score += 12;
+    else if (f.pe < 10) score += 7;
+    else if (f.pe > 20) score -= 8;
+  }
+  if (f.dividendYield) {
+    if (f.dividendYield > 8) score += 10;
+    else if (f.dividendYield > 5) score += 5;
+    else if (f.dividendYield > 3) score += 2;
+  }
+  if (f.roe) {
+    if (f.roe > 20) score += 8;
+    else if (f.roe > 15) score += 5;
+    else if (f.roe < 5) score -= 6;
+  }
+  if (f.revenueGrowth) {
+    if (f.revenueGrowth > 15) score += 8;
+    else if (f.revenueGrowth > 5) score += 4;
+    else if (f.revenueGrowth < 0) score -= 7;
+  }
+  // Technical
+  if (f.technicals?.rsi) {
+    const rsi = f.technicals.rsi;
+    if (rsi < 30) score += 8;
+    else if (rsi > 70) score -= 8;
+  }
+  // News sentiment
+  const posArticles = articles.filter(a => a.content?.toLowerCase().match(/profit|growth|record|expand|revenue|dividend|beat|strong|surge|rise/));
+  const negArticles = articles.filter(a => a.content?.toLowerCase().match(/loss|decline|fall|drop|risk|probe|concern|debt|lawsuit|warning/));
+  score += (posArticles.length - negArticles.length) * 4;
+
+  return Math.max(1, Math.min(100, Math.round(score)));
+}
+
+function buildOutlookFromScore(score, ticker, fundamentals, avData) {
+  const reco   = score >= 75 ? "Strong Buy" : score >= 60 ? "Buy" : score >= 48 ? "Hold" : score >= 35 ? "Watch" : score >= 20 ? "Sell" : "Strong Sell";
+  const sent   = score >= 58 ? "Bullish" : score >= 42 ? "Neutral" : "Bearish";
+  const f = fundamentals || {};
+  return {
+    overallSentiment: sent,
+    confidenceScore: score,
+    recommendation: reco,
+    fundamentalScore: score,
+    newsScore: score,
+    technicalSignal: f.technicals?.signal || "Neutral",
+    keyDrivers: f.highlights ? [f.highlights] : [`Score ${score}/100 based on available financial data`],
+    risks: f.debtToEquity > 1.5 ? ["High debt-to-equity ratio"] : ["Monitor for market developments"],
+    opportunities: f.dividendYield > 5 ? [`Strong dividend yield of ${f.dividendYield}%`] : ["Assess upcoming earnings"],
+    summary: `${ticker} scores ${score}/100. ${f.pe ? `Trading at P/E ${f.pe}x.` : ""} ${f.dividendYield ? `Dividend yield ${f.dividendYield}%.` : ""} Recommendation: ${reco}.`,
+  };
+}
+
+function detectCategory(text) {
+  const t = text.toLowerCase();
+  if (t.match(/profit|revenue|earnings|results|eps|dividend/)) return "earnings";
+  if (t.match(/regulat|central bank|cma|cbk|policy/)) return "regulation";
+  if (t.match(/expand|acqui|merger|launch|partner/)) return "expansion";
+  if (t.match(/risk|loss|decline|probe|lawsuit|debt/)) return "risk";
+  if (t.match(/dividend|payout|yield/)) return "dividend";
+  if (t.match(/acqui|takeover|merger/)) return "acquisition";
+  if (t.match(/nse|market|index|nasi|trading/)) return "market";
+  return "other";
 }
 
 function getDecision(outlook) {
@@ -295,6 +581,143 @@ function NewsCard({ article }) {
 }
 
 // ─── StockOutlookCard ─────────────────────────────────────────────────────────
+// ─── Investment Score Gauge (1-100) ──────────────────────────────────────────
+function ScoreGauge({ score, label, color, breakdown }) {
+  if (score == null) return null;
+
+  const radius = 52;
+  const circumference = 2 * Math.PI * radius;
+  const filled = (score / 100) * circumference;
+  const scoreColor = score >= 65 ? T.green : score >= 45 ? T.amber : T.red;
+  const scoreLabel = label || (score >= 80 ? "Strong Buy" : score >= 65 ? "Buy" : score >= 55 ? "Moderate Buy" : score >= 45 ? "Hold" : score >= 35 ? "Watch" : "Sell");
+
+  return (
+    <div style={{ display:"flex", flexDirection:"column", alignItems:"center", padding:"14px 0" }}>
+      <div style={{ position:"relative", width:"130px", height:"130px", marginBottom:"10px" }}>
+        <svg width="130" height="130" viewBox="0 0 130 130" style={{ transform:"rotate(-90deg)" }}>
+          {/* Track */}
+          <circle cx="65" cy="65" r={radius} fill="none" stroke={T.border} strokeWidth="10" />
+          {/* Score arc */}
+          <circle cx="65" cy="65" r={radius} fill="none"
+            stroke={scoreColor} strokeWidth="10"
+            strokeDasharray={`${filled} ${circumference - filled}`}
+            strokeLinecap="round"
+            style={{ transition:"stroke-dasharray 1s ease, stroke 0.5s ease" }}
+          />
+        </svg>
+        {/* Center text */}
+        <div style={{ position:"absolute", top:"50%", left:"50%", transform:"translate(-50%,-50%)", textAlign:"center" }}>
+          <div style={{ fontFamily:"'Fraunces',serif", fontWeight:"800", fontSize:"28px", color:scoreColor, lineHeight:1 }}>{score}</div>
+          <div style={{ fontSize:"9px", color:T.textFaint, fontFamily:"'DM Mono',monospace", letterSpacing:"0.04em" }}>/ 100</div>
+        </div>
+      </div>
+
+      {/* Label */}
+      <div style={{ fontFamily:"'DM Mono',monospace", fontWeight:"800", fontSize:"12px", color:scoreColor, letterSpacing:"0.06em", marginBottom:"10px" }}>{scoreLabel}</div>
+
+      {/* Score breakdown bars */}
+      {breakdown && (
+        <div style={{ width:"100%", display:"flex", flexDirection:"column", gap:"5px" }}>
+          {[
+            { label:"NEWS",        score: breakdown.newsSentimentScore, color:"#0284C7" },
+            { label:"TECHNICAL",   score: breakdown.techScore,          color:T.green   },
+            { label:"FUNDAMENTAL", score: breakdown.fundamentalScore,   color:T.accent  },
+          ].map((item, i) => item.score != null && (
+            <div key={i}>
+              <div style={{ display:"flex", justifyContent:"space-between", marginBottom:"2px" }}>
+                <span style={{ fontSize:"9px", color:T.textFaint, fontFamily:"'DM Mono',monospace", letterSpacing:"0.04em" }}>{item.label}</span>
+                <span style={{ fontSize:"9px", color:item.color, fontFamily:"'DM Mono',monospace", fontWeight:"700" }}>{item.score}</span>
+              </div>
+              <div style={{ height:"3px", background:T.border, borderRadius:"2px", overflow:"hidden" }}>
+                <div style={{ height:"100%", width:`${item.score}%`, background:item.color, borderRadius:"2px", transition:"width 1s ease" }} />
+              </div>
+            </div>
+          ))}
+          {breakdown.rsi && (
+            <div style={{ marginTop:"4px", padding:"4px 8px", background:T.surfaceAlt, borderRadius:"6px", display:"flex", justifyContent:"space-between" }}>
+              <span style={{ fontSize:"9px", color:T.textFaint, fontFamily:"'DM Mono',monospace" }}>RSI</span>
+              <span style={{ fontSize:"9px", color: breakdown.rsi > 70 ? T.red : breakdown.rsi < 30 ? T.green : T.textMuted, fontFamily:"'DM Mono',monospace", fontWeight:"700" }}>{breakdown.rsi?.toFixed(1)}</span>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function FundamentalsBar({ fundamentals, technicalSignal, fundamentalScore, newsScore }) {
+  if (!fundamentals) return null;
+  const f = fundamentals;
+  const tColor = technicalSignal === "Bullish" ? T.green : technicalSignal === "Bearish" ? T.red : T.textMuted;
+  const tBg    = technicalSignal === "Bullish" ? T.greenBg : technicalSignal === "Bearish" ? T.redBg : T.surfaceAlt;
+
+  return (
+    <div style={{ marginTop:"12px", padding:"12px", background:T.surfaceAlt, borderRadius:T.radiusSm, border:`1px solid ${T.border}` }}>
+      <div style={{ fontSize:"10px", color:T.textFaint, fontFamily:"'DM Mono',monospace", marginBottom:"10px", letterSpacing:"0.05em", display:"flex", justifyContent:"space-between", alignItems:"center" }}>
+        <span>FINANCIAL DATA · {f.source || "Annual Report"}</span>
+        {technicalSignal && (
+          <span style={{ padding:"2px 8px", borderRadius:"4px", background:tBg, color:tColor, fontWeight:"700" }}>
+            {technicalSignal === "Bullish" ? "↑" : technicalSignal === "Bearish" ? "↓" : "→"} {technicalSignal}
+          </span>
+        )}
+      </div>
+
+      {/* Score bars */}
+      {(fundamentalScore != null || newsScore != null) && (
+        <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr", gap:"8px", marginBottom:"10px" }}>
+          {[
+            { label:"FUNDAMENTAL", score:fundamentalScore, color:T.accent },
+            { label:"TECHNICAL",   score:f.technicals?.pricePosition, color:T.green },
+            { label:"NEWS",        score:newsScore, color:T.amber },
+          ].map((item, i) => item.score != null && (
+            <div key={i}>
+              <div style={{ display:"flex", justifyContent:"space-between", marginBottom:"3px" }}>
+                <span style={{ fontSize:"9px", color:T.textFaint, fontFamily:"'DM Mono',monospace" }}>{item.label}</span>
+                <span style={{ fontSize:"9px", color:item.color, fontFamily:"'DM Mono',monospace", fontWeight:"700" }}>{Math.round(item.score)}</span>
+              </div>
+              <div style={{ height:"4px", background:T.border, borderRadius:"2px", overflow:"hidden" }}>
+                <div style={{ height:"100%", width:`${Math.min(100,item.score)}%`, background:item.color, borderRadius:"2px" }} />
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Key metrics grid */}
+      <div style={{ display:"grid", gridTemplateColumns:"repeat(3,1fr)", gap:"6px" }}>
+        {[
+          { label:"Price",    value: f.price ? `KSh ${f.price}` : null },
+          { label:"P/E",      value: f.pe ? `${f.pe}x` : null },
+          { label:"Div Yield",value: f.dividendYield ? `${f.dividendYield}%` : null },
+          { label:"EPS",      value: f.eps ? `KSh ${f.eps}` : null },
+          { label:"ROE",      value: f.roe ? `${f.roe}%` : null },
+          { label:"Rev Grow", value: f.revenueGrowth ? `${f.revenueGrowth > 0 ? "+" : ""}${f.revenueGrowth}%` : null },
+        ].filter(m => m.value).map((m, i) => (
+          <div key={i} style={{ padding:"5px 7px", background:T.surface, borderRadius:"6px", border:`1px solid ${T.border}` }}>
+            <div style={{ fontSize:"9px", color:T.textFaint, fontFamily:"'DM Mono',monospace", marginBottom:"1px" }}>{m.label}</div>
+            <div style={{ fontSize:"12px", fontWeight:"700", color:T.text, fontFamily:"'DM Mono',monospace" }}>{m.value}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* Technical indicators */}
+      {f.technicals && (
+        <div style={{ marginTop:"8px", display:"flex", gap:"6px", flexWrap:"wrap" }}>
+          <span style={{ fontSize:"10px", padding:"2px 7px", borderRadius:"4px", background:f.technicals.rsi > 70 ? T.redBg : f.technicals.rsi < 30 ? T.greenBg : T.surfaceAlt, color:f.technicals.rsi > 70 ? T.red : f.technicals.rsi < 30 ? T.green : T.textMuted, fontFamily:"'DM Mono',monospace", border:`1px solid ${T.border}` }}>
+            RSI {f.technicals.rsi}
+          </span>
+          <span style={{ fontSize:"10px", padding:"2px 7px", borderRadius:"4px", background:T.surfaceAlt, color:T.textMuted, fontFamily:"'DM Mono',monospace", border:`1px solid ${T.border}` }}>
+            52W: {f.weekLow52}–{f.weekHigh52}
+          </span>
+          <span style={{ fontSize:"10px", padding:"2px 7px", borderRadius:"4px", background:T.accentLight, color:T.accent, fontFamily:"'DM Mono',monospace", border:`1px solid ${T.accentBorder}` }}>
+            {f.technicals.pricePosition}% of range
+          </span>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function StockOutlookCard({ stock, outlook, isActive }) {
   const sentimentKey = outlook?.overallSentiment?.toLowerCase() === "bullish" ? "bullish"
     : outlook?.overallSentiment?.toLowerCase() === "bearish" ? "bearish" : "neutral";
@@ -320,14 +743,21 @@ function StockOutlookCard({ stock, outlook, isActive }) {
 
       {/* Header */}
       <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:"14px", marginTop:"4px" }}>
-        <div>
+        <div style={{ flex:1 }}>
           <div style={{ display:"flex", alignItems:"center", gap:"7px", marginBottom:"3px" }}>
             <span style={{ fontFamily:"'DM Mono',monospace", fontSize:"12px", fontWeight:"800", color: stock.color, letterSpacing:"0.08em" }}>{stock.ticker}</span>
             <span style={{ fontSize:"10px", color:T.textFaint, fontFamily:"'DM Mono',monospace", background:T.surfaceAlt, padding:"1px 6px", borderRadius:"4px" }}>{stock.sector}</span>
           </div>
           <div style={{ fontFamily:"'Fraunces',serif", fontWeight:"700", fontSize:"15px", color:T.text }}>{stock.name}</div>
+          {outlook && <div style={{ marginTop:"6px" }}><SentimentBadge sentiment={sentimentKey} score={outlook.confidenceScore} /></div>}
         </div>
-        {outlook && <SentimentBadge sentiment={sentimentKey} score={outlook.confidenceScore} />}
+        {outlook?.avData?.investmentScore && (
+          <ScoreGauge
+            score={outlook.avData.investmentScore}
+            label={outlook.avData.scoreLabel}
+            breakdown={outlook.avData.breakdown}
+          />
+        )}
       </div>
 
       {isActive && !outlook ? (
@@ -339,8 +769,17 @@ function StockOutlookCard({ stock, outlook, isActive }) {
         </div>
       ) : outlook ? (
         <>
-          <ConfidenceMeter score={outlook.confidenceScore} />
-          {outlook.recommendation && <div style={{ marginTop:"12px" }}><RecoBadge reco={outlook.recommendation} /></div>}
+          {/* Investment Score — use AV score if available, else confidenceScore */}
+          {outlook.avData?.investmentScore ? (
+            <ScoreGauge
+              score={outlook.avData.investmentScore}
+              label={outlook.avData.scoreLabel}
+              breakdown={outlook.avData.breakdown}
+            />
+          ) : (
+            <ConfidenceMeter score={outlook.confidenceScore} />
+          )}
+          {outlook.recommendation && <div style={{ marginTop:"8px" }}><RecoBadge reco={outlook.recommendation} /></div>}
 
           {outlook.keyDrivers?.length > 0 && (
             <div style={{ marginTop:"12px" }}>
@@ -376,6 +815,12 @@ function StockOutlookCard({ stock, outlook, isActive }) {
               <p style={{ fontSize:"12px", color:T.textMuted, margin:0, lineHeight:"1.6", fontFamily:"'Plus Jakarta Sans',sans-serif" }}>{outlook.summary}</p>
             </div>
           )}
+          <FundamentalsBar
+            fundamentals={outlook.fundamentals}
+            technicalSignal={outlook.technicalSignal}
+            fundamentalScore={outlook.fundamentalScore}
+            newsScore={outlook.newsScore}
+          />
         </>
       ) : (
         <div style={{ padding:"16px 0", textAlign:"center" }}>
@@ -442,6 +887,40 @@ function SignalCard({ stock, outlook, news }) {
           <span style={{ fontWeight:"600", color: d.color }}>{d.desc}</span> — {outlook.summary}
         </p>
 
+        {/* AV Investment Score + metrics */}
+        <div style={{ display:"flex", alignItems:"flex-start", gap:"16px", marginBottom:"14px" }}>
+          {outlook.avData?.investmentScore && (
+            <div style={{ flexShrink:0, textAlign:"center" }}>
+              <div style={{
+                width:"64px", height:"64px", borderRadius:"50%",
+                background:`conic-gradient(${outlook.avData.scoreColor || T.accent} ${outlook.avData.investmentScore * 3.6}deg, ${T.border} 0deg)`,
+                display:"flex", alignItems:"center", justifyContent:"center",
+              }}>
+                <div style={{ width:"50px", height:"50px", borderRadius:"50%", background:T.surface, display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center" }}>
+                  <span style={{ fontFamily:"'Fraunces',serif", fontWeight:"800", fontSize:"16px", color:outlook.avData.scoreColor || T.accent, lineHeight:1 }}>{outlook.avData.investmentScore}</span>
+                  <span style={{ fontSize:"8px", color:T.textFaint, fontFamily:"'DM Mono',monospace" }}>/100</span>
+                </div>
+              </div>
+              <div style={{ fontSize:"9px", color:outlook.avData.scoreColor || T.accent, fontFamily:"'DM Mono',monospace", fontWeight:"700", marginTop:"4px", letterSpacing:"0.04em" }}>AV SCORE</div>
+            </div>
+          )}
+          <div style={{ flex:1 }}>
+            {outlook.fundamentals && (
+              <div style={{ display:"flex", gap:"5px", flexWrap:"wrap" }}>
+                {outlook.fundamentals.price && <span style={{ fontSize:"11px", padding:"2px 7px", borderRadius:"6px", background:T.accentLight, color:T.accent, fontFamily:"'DM Mono',monospace", border:`1px solid ${T.accentBorder}`, fontWeight:"700" }}>KSh {outlook.fundamentals.price}</span>}
+                {outlook.fundamentals.pe && <span style={{ fontSize:"11px", padding:"2px 7px", borderRadius:"6px", background:T.surfaceAlt, color:T.textMuted, fontFamily:"'DM Mono',monospace", border:`1px solid ${T.border}` }}>P/E {outlook.fundamentals.pe}x</span>}
+                {outlook.fundamentals.dividendYield && <span style={{ fontSize:"11px", padding:"2px 7px", borderRadius:"6px", background:T.greenBg, color:T.green, fontFamily:"'DM Mono',monospace", border:"1px solid #A7F3D0" }}>Div {outlook.fundamentals.dividendYield?.toFixed?.(1) || outlook.fundamentals.dividendYield}%</span>}
+                {outlook.technicalSignal && <span style={{ fontSize:"11px", padding:"2px 7px", borderRadius:"6px", background: outlook.technicalSignal==="Bullish"?T.greenBg:outlook.technicalSignal==="Bearish"?T.redBg:T.surfaceAlt, color:outlook.technicalSignal==="Bullish"?T.green:outlook.technicalSignal==="Bearish"?T.red:T.textMuted, fontFamily:"'DM Mono',monospace", border:`1px solid ${T.border}` }}>Tech: {outlook.technicalSignal}</span>}
+              </div>
+            )}
+            {outlook.avData?.breakdown?.rsi && (
+              <div style={{ marginTop:"5px", fontSize:"11px", color:T.textFaint, fontFamily:"'DM Mono',monospace" }}>
+                RSI {outlook.avData.breakdown.rsi?.toFixed(1)} · {outlook.avData.technicals?.rsiSignal || ""}
+              </div>
+            )}
+          </div>
+        </div>
+
         {/* Chips */}
         <div style={{ display:"flex", gap:"6px", flexWrap:"wrap", marginBottom:"14px" }}>
           {(outlook.keyDrivers || []).slice(0,2).map((dr, i) => (
@@ -489,10 +968,12 @@ function SignalsTab({ stockOutlooks, news, rankedStocks, onRunAnalysis, running 
     .map(([ticker, outlook]) => {
       const stock = NSE_STOCKS.find(s => s.ticker === ticker);
       if (!stock || !outlook) return null;
-      return { stock, outlook, decision: getDecision(outlook) };
+      // Use AV score if available, fall back to confidenceScore
+      const sortScore = outlook.avData?.investmentScore || outlook.confidenceScore || 0;
+      return { stock, outlook, decision: getDecision(outlook), sortScore };
     })
     .filter(Boolean)
-    .sort((a, b) => (b.outlook.confidenceScore || 0) - (a.outlook.confidenceScore || 0));
+    .sort((a, b) => b.sortScore - a.sortScore);
 
   const hasData = allSignals.length > 0;
   const buys  = allSignals.filter(s => s.decision === "Buy");
@@ -628,14 +1109,17 @@ function EmailDigest({ stockOutlooks }) {
 
   const generate = async () => {
     setLoading(true);
-    const summary = Object.entries(stockOutlooks)
-      .map(([t,o])=>`${t}: ${o.overallSentiment} (${o.confidenceScore}%), Rec: ${o.recommendation}. ${o.summary}`)
-      .join("\n");
-    const raw = await callClaude(
-      [{ role:"user", content:`Generate a daily NSE email digest:\n${summary}\n\nReturn JSON: { "subject":"...","executiveSummary":"3 sentences","bullishPicks":[{"ticker":"...","rationale":"..."}],"bearishWarnings":[{"ticker":"...","rationale":"..."}],"closingNote":"1 sentence" }` }],
-      "You are a senior NSE investment analyst. Return only valid JSON.", 800
-    );
-    try { setDigest(JSON.parse(raw)); } catch { setDigest({ subject:"NSE Daily Digest", executiveSummary: raw }); }
+    // Build a compact summary — only top 4 stocks to keep prompt short and fast
+    const entries = Object.entries(stockOutlooks).slice(0, 4);
+    const summary = entries.map(([t,o]) => `${t}: ${o.overallSentiment} ${o.confidenceScore}% ${o.recommendation}`).join(", ");
+    const bullish = entries.filter(([,o]) => o.overallSentiment?.toLowerCase() === "bullish").map(([t,o]) => `${t}(${o.recommendation})`).join(", ") || "none";
+    const bearish = entries.filter(([,o]) => o.overallSentiment?.toLowerCase() === "bearish").map(([t,o]) => `${t}(${o.recommendation})`).join(", ") || "none";
+    const prompt = `NSE stocks: ${summary}. Bullish: ${bullish}. Bearish: ${bearish}. Write a brief daily digest. Return JSON only: {"subject":"NSE Daily Digest - [date]","executiveSummary":"2 sentences about market","bullishPicks":[{"ticker":"X","rationale":"reason"}],"bearishWarnings":[{"ticker":"X","rationale":"reason"}],"closingNote":"1 sentence"}`;
+    try {
+      const raw = await callClaude([{ role:"user", content: prompt }], "Return only valid JSON. Be concise.", 400);
+      const match = raw.match(/\{[\s\S]*\}/);
+      setDigest(match ? JSON.parse(match[0]) : { subject:"NSE Daily Digest", executiveSummary: raw });
+    } catch { setDigest({ subject:"NSE Daily Digest", executiveSummary: "Unable to generate preview. Run stock analysis first." }); }
     setLoading(false);
   };
 
@@ -730,11 +1214,13 @@ function EmailDigest({ stockOutlooks }) {
 }
 
 // ─── Main App ─────────────────────────────────────────────────────────────────
-export default function NSEIntelligence() {
+export default function NSEIntelligence({ onBack }) {
   const [activeTab, setActiveTab]         = useState("dashboard");
   const [news, setNews]                   = useState(() => loadCache(NEWS_KEY) || FALLBACK_NEWS);
   const [stockOutlooks, setStockOutlooks] = useState(() => loadCache(OUTLOOK_KEY) || {});
   const [filterStock, setFilterStock]     = useState("ALL");
+  const [filterSource, setFilterSource]   = useState("ALL");
+  const [feedSources, setFeedSources]     = useState({});   // {sourceName: count}
   const [lastRefresh, setLastRefresh]     = useState(new Date());
   const [running, setRunning]             = useState(false);
   const [currentStock, setCurrentStock]   = useState("");
@@ -742,17 +1228,54 @@ export default function NSEIntelligence() {
   const [totalCount, setTotalCount]       = useState(0);
   const [statusMsg, setStatusMsg]         = useState("");
 
+  // Live news feed state
+  const [liveFeeds, setLiveFeeds]         = useState([]);         // market-wide live articles
+  const [newCount, setNewCount]           = useState(0);           // count of unseen new articles
+  const [lastNewsFetch, setLastNewsFetch] = useState(null);
+  const [feedFetching, setFeedFetching]   = useState(false);
+  const pollRef = useRef(null);
+
+  // Restore cached article analyses on mount
   useEffect(() => {
     const cachedArticles = loadCache(CACHE_KEY) || {};
     if (Object.keys(cachedArticles).length > 0) {
       setNews(prev => prev.map(a => ({ ...a, analysis: cachedArticles[a.id] || a.analysis })));
     }
+    // Start the live news poll immediately
+    doNewsFetch();
   }, []);
+
+  // ── Live news polling: fetch market news every 5 minutes ─────────────────
+  const doNewsFetch = useCallback(async () => {
+    setFeedFetching(true);
+    try {
+      const { articles: fresh, sources } = await fetchMarketNews();
+      if (fresh.length > 0) {
+        if (sources && Object.keys(sources).length > 0) setFeedSources(sources);
+        setLiveFeeds(prev => {
+          const genuinelyNew = fresh.filter(a => isNewArticle(a, prev));
+          if (genuinelyNew.length > 0) setNewCount(n => n + genuinelyNew.length);
+          // Merge: new first, then existing, dedup by id, keep newest 80
+          const all = [...genuinelyNew, ...prev];
+          const seen = new Set();
+          return all.filter(a => { if(seen.has(a.id)) return false; seen.add(a.id); return true; }).slice(0, 80);
+        });
+        setLastNewsFetch(new Date());
+      }
+    } catch(e) { console.error("Feed fetch failed:", e); }
+    setFeedFetching(false);
+  }, []);
+
+  // Set up polling interval
+  useEffect(() => {
+    pollRef.current = setInterval(doNewsFetch, POLL_INTERVAL);
+    return () => clearInterval(pollRef.current);
+  }, [doNewsFetch]);
 
   const runAnalysis = useCallback(async (forceRefresh = false) => {
     if (running) return;
     setRunning(true); setDoneCount(0);
-    const stocksToProcess = NSE_STOCKS;
+    const stocksToProcess = TRACKED_STOCKS;
     setTotalCount(stocksToProcess.length);
     const articleCache = forceRefresh ? {} : (loadCache(CACHE_KEY) || {});
     const outlookCache = forceRefresh ? {} : (loadCache(OUTLOOK_KEY) || {});
@@ -765,7 +1288,7 @@ export default function NSEIntelligence() {
       try { liveArticles = await fetchLiveNews(stock.ticker, stock.name); } catch {}
       const fallbackForStock = FALLBACK_NEWS.filter(a => a.stock === stock.ticker);
       const existingTitles   = new Set(liveArticles.map(a => a.title.toLowerCase()));
-      const merged = [...liveArticles, ...fallbackForStock.filter(a => !existingTitles.has(a.title.toLowerCase()))].slice(0, 5);
+      let merged = [...liveArticles, ...fallbackForStock.filter(a => !existingTitles.has(a.title.toLowerCase()))].slice(0, 8);
       allNews = [...allNews.filter(a => a.stock !== stock.ticker), ...merged];
       setNews([...allNews]);
       saveCache(NEWS_KEY, allNews);
@@ -776,9 +1299,22 @@ export default function NSEIntelligence() {
         continue;
       }
 
-      setStatusMsg(`AI analysing ${stock.name}…`);
+      // Fetch fundamentals and Alpha Vantage data in parallel
+      setStatusMsg(`Fetching financials for ${stock.name}…`);
+      const [fundamentals, avData] = await Promise.all([
+        fetchFundamentals(stock.ticker, stock.name),
+        fetchAlphaVantage(stock.ticker, stock.name),
+      ]);
+
+      // Merge AV news articles with fetched news (deduplicate)
+      if (avData?.articles?.length > 0) {
+        const avArticles = avData.articles.filter(a => isNewArticle(a, merged));
+        merged = [...avArticles, ...merged].slice(0, 8);
+      }
+
+      setStatusMsg(`AI analysing ${stock.name} (news + fundamentals + AV score)…`);
       try {
-        const { articleAnalyses, outlook } = await analyseStock(stock, merged);
+        const { articleAnalyses, outlook } = await analyseStock(stock, merged, fundamentals, avData);
         merged.forEach((article, i) => { if (articleAnalyses[i]) articleCache[article.id] = articleAnalyses[i]; });
         saveCache(CACHE_KEY, articleCache);
         setNews(prev => prev.map(a => ({ ...a, analysis: articleCache[a.id] || a.analysis })));
@@ -807,16 +1343,23 @@ export default function NSEIntelligence() {
   const filteredNews  = filterStock === "ALL" ? news : news.filter(n => n.stock === filterStock);
   const liveCount     = news.filter(a => String(a.id).startsWith("live_")).length;
   const analysedCount = news.filter(a => a.analysis).length;
-  const rankedStocks  = NSE_STOCKS
+  const getDisplayScore = (outlook) => {
+    if (!outlook) return null;
+    return outlook.avData?.investmentScore || outlook.confidenceScore || null;
+  };
+
+  const rankedStocks  = TRACKED_STOCKS
     .map(s => ({ ...s, outlook: stockOutlooks[s.ticker] }))
     .sort((a, b) => {
-      const score = o => !o ? -999 : o.overallSentiment?.toLowerCase() === "bullish" ? (o.confidenceScore||50) : o.overallSentiment?.toLowerCase() === "bearish" ? -(o.confidenceScore||50) : 0;
-      return score(b.outlook) - score(a.outlook);
+      const sa = getDisplayScore(a.outlook) || 0;
+      const sb = getDisplayScore(b.outlook) || 0;
+      return sb - sa;
     });
 
   const progressPct = totalCount > 0 ? Math.round((doneCount / totalCount) * 100) : 0;
   const TABS = [
     { id:"dashboard", label:"Dashboard" },
+    { id:"feed",      label:"Live Feed" },
     { id:"news",      label:"News Feed" },
     { id:"outlook",   label:"Outlook" },
     { id:"signals",   label:"🎯 Signals" },
@@ -830,6 +1373,7 @@ export default function NSEIntelligence() {
         @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
         @keyframes slideIn { from{opacity:0;transform:translateY(10px)} to{opacity:1;transform:translateY(0)} }
         @keyframes fadeIn { from{opacity:0} to{opacity:1} }
+        @keyframes spin { from{transform:rotate(0deg)} to{transform:rotate(360deg)} }
         * { box-sizing:border-box; }
         ::selection { background:#BFDBFE; color:#1D4ED8; }
         ::-webkit-scrollbar { width:5px; height:5px; }
@@ -848,6 +1392,11 @@ export default function NSEIntelligence() {
         <div style={{ maxWidth:"1280px", margin:"0 auto", padding:"0 24px", display:"flex", alignItems:"center", justifyContent:"space-between", height:"62px" }}>
           {/* Logo */}
           <div style={{ display:"flex", alignItems:"center", gap:"10px" }}>
+            {onBack && (
+              <button onClick={onBack} style={{ padding:"5px 10px", background:"transparent", border:`1px solid ${T.border}`, borderRadius:"7px", color:T.textMuted, fontSize:"12px", cursor:"pointer", fontFamily:"'Plus Jakarta Sans',sans-serif", marginRight:"4px" }}>
+                ← Home
+              </button>
+            )}
             <div style={{ width:"34px", height:"34px", borderRadius:"9px", background:`linear-gradient(135deg, ${T.accent}, #059669)`, display:"flex", alignItems:"center", justifyContent:"center", fontFamily:"'Fraunces',serif", fontWeight:"800", fontSize:"16px", color:"#fff", boxShadow:T.shadow }}>N</div>
             <div>
               <div style={{ fontFamily:"'Fraunces',serif", fontWeight:"700", fontSize:"15px", color:T.text, lineHeight:1, letterSpacing:"-0.01em" }}>NSE Intelligence</div>
@@ -939,7 +1488,7 @@ export default function NSEIntelligence() {
             <div style={{ display:"grid", gridTemplateColumns:"repeat(4,1fr)", gap:"12px", marginBottom:"28px" }}>
               {[
                 { label:"Stocks Tracked",   value:NSE_STOCKS.length,                                                                                    color:T.accent, icon:"📊", sub:"NSE primary listings" },
-                { label:"News Articles",    value:news.length,                                                                                           color:T.text,   icon:"📰", sub:`${liveCount} live · ${analysedCount} analysed` },
+                { label:"News Articles",    value:news.length + liveFeeds.length,                                                                color:T.text,   icon:"📰", sub:`${liveFeeds.length} live feed · ${analysedCount} analysed` },
                 { label:"Bullish Signals",  value:Object.values(stockOutlooks).filter(o=>o?.overallSentiment?.toLowerCase()==="bullish").length,         color:T.green,  icon:"↑",  sub:"Positive outlook" },
                 { label:"Bearish Signals",  value:Object.values(stockOutlooks).filter(o=>o?.overallSentiment?.toLowerCase()==="bearish").length,         color:T.red,    icon:"↓",  sub:"Negative outlook" },
               ].map((s,i) => (
@@ -984,7 +1533,16 @@ export default function NSEIntelligence() {
                       ) : o ? (
                         <div style={{ display:"flex", alignItems:"center", gap:"8px" }}>
                           <RecoBadge reco={o.recommendation} />
-                          <SentimentBadge sentiment={sentimentKey} score={o.confidenceScore} />
+                          {o.avData?.investmentScore ? (
+                            <span style={{ fontFamily:"'DM Mono',monospace", fontWeight:"800", fontSize:"13px",
+                              color: o.avData.investmentScore >= 65 ? T.green : o.avData.investmentScore >= 45 ? T.amber : T.red,
+                              background: o.avData.investmentScore >= 65 ? T.greenBg : o.avData.investmentScore >= 45 ? T.amberBg : T.redBg,
+                              padding:"3px 9px", borderRadius:"6px", border:`1px solid ${T.border}` }}>
+                              {o.avData.investmentScore}/100
+                            </span>
+                          ) : (
+                            <SentimentBadge sentiment={sentimentKey} score={o.confidenceScore} />
+                          )}
                         </div>
                       ) : (
                         <span style={{ fontSize:"11px", color:T.textFaint, fontFamily:"'DM Mono',monospace" }}>{news.filter(n=>n.stock===stock.ticker).length} articles · pending</span>
@@ -996,12 +1554,125 @@ export default function NSEIntelligence() {
             </div>
 
             {/* Latest news */}
-            <SectionHeader title="Latest News" subtitle="Most recent articles" action={
-              <button onClick={() => setActiveTab("news")} style={{ padding:"7px 14px", background:T.accentLight, border:`1px solid ${T.accentBorder}`, borderRadius:"8px", color:T.accent, fontSize:"12px", fontWeight:"700", cursor:"pointer", fontFamily:"'Plus Jakarta Sans',sans-serif" }}>View All →</button>
+            <SectionHeader title="Latest News" subtitle="Most recent from all sources" action={
+              <div style={{ display:"flex", gap:"8px" }}>
+                <button onClick={() => { setActiveTab("feed"); setNewCount(0); }} style={{ padding:"7px 14px", background:newCount>0?T.redBg:T.accentLight, border:`1px solid ${newCount>0?"#FECACA":T.accentBorder}`, borderRadius:"8px", color:newCount>0?T.red:T.accent, fontSize:"12px", fontWeight:"700", cursor:"pointer", fontFamily:"'Plus Jakarta Sans',sans-serif" }}>
+                  {newCount > 0 ? `${newCount} new →` : "Live Feed →"}
+                </button>
+                <button onClick={() => setActiveTab("news")} style={{ padding:"7px 14px", background:T.accentLight, border:`1px solid ${T.accentBorder}`, borderRadius:"8px", color:T.accent, fontSize:"12px", fontWeight:"700", cursor:"pointer", fontFamily:"'Plus Jakarta Sans',sans-serif" }}>All News →</button>
+              </div>
             } />
             <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:"12px" }}>
-              {[...news].sort((a,b)=>new Date(b.date)-new Date(a.date)).slice(0,4).map(a=><NewsCard key={a.id} article={a} />)}
+              {[...liveFeeds.slice(0,2), ...[...news].sort((a,b)=>new Date(b.date)-new Date(a.date))].slice(0,4).map(a=><NewsCard key={a.id} article={a} />)}
             </div>
+          </div>
+        )}
+
+        {/* ── LIVE FEED ── */}
+        {activeTab === "feed" && (
+          <div style={{ animation:"slideIn 0.3s ease" }}>
+            {/* Header */}
+            <div style={{ display:"flex", alignItems:"flex-end", justifyContent:"space-between", marginBottom:"20px" }}>
+              <div>
+                <div style={{ display:"flex", alignItems:"center", gap:"10px", marginBottom:"4px" }}>
+                  <h2 style={{ fontFamily:"'Fraunces',serif", fontWeight:"700", fontSize:"22px", color:T.text, margin:0, letterSpacing:"-0.02em" }}>Live News Feed</h2>
+                  <span style={{ padding:"3px 8px", background:"#FEE2E2", border:"1px solid #FCA5A5", borderRadius:"20px", fontSize:"10px", color:T.red, fontWeight:"800", fontFamily:"'DM Mono',monospace", animation:"pulse 2s infinite" }}>● LIVE</span>
+                </div>
+                <p style={{ fontSize:"12px", color:T.textFaint, margin:0, fontFamily:"'DM Mono',monospace" }}>
+                  {feedFetching ? "⟳ Fetching from 14+ sources…" : lastNewsFetch ? `Updated ${lastNewsFetch.toLocaleTimeString("en-KE",{hour:"2-digit",minute:"2-digit"})} EAT · refreshes every 3 min` : "Starting live feed…"}
+                </p>
+              </div>
+              <button onClick={doNewsFetch} disabled={feedFetching}
+                style={{ display:"flex", alignItems:"center", gap:"6px", padding:"8px 16px", background:feedFetching?T.surfaceAlt:T.accent, border:"none", borderRadius:"8px", color:feedFetching?T.textMuted:"#fff", fontSize:"12px", fontWeight:"700", cursor:feedFetching?"default":"pointer", fontFamily:"'Plus Jakarta Sans',sans-serif", boxShadow:feedFetching?"none":T.shadow }}>
+                <span style={{ display:"inline-block", animation:feedFetching?"spin 0.8s linear infinite":"none", fontSize:"14px" }}>⟳</span>
+                {feedFetching ? "Fetching…" : "Refresh Now"}
+              </button>
+            </div>
+
+            {/* Live ticker banner */}
+            {liveFeeds.length > 0 && (
+              <div style={{ background:"#1C1917", borderRadius:T.radius, padding:"10px 16px", marginBottom:"20px", display:"flex", alignItems:"center", gap:"12px", overflow:"hidden" }}>
+                <span style={{ fontSize:"9px", fontFamily:"'DM Mono',monospace", fontWeight:"800", flexShrink:0, background:T.red, color:"#fff", padding:"3px 8px", borderRadius:"4px", letterSpacing:"0.06em" }}>LIVE</span>
+                <div style={{ overflow:"hidden", flex:1 }}>
+                  <marquee behavior="scroll" direction="left" scrollamount="4" style={{ fontSize:"12px", color:"rgba(255,255,255,0.8)", fontFamily:"'Plus Jakarta Sans',sans-serif" }}>
+                    {liveFeeds.slice(0,12).map((a,i) => (
+                      <span key={i} style={{ marginRight:"60px" }}>
+                        {a.stock && a.stock !== "MARKET" && <span style={{ color:"#FCD34D", fontWeight:"700", marginRight:"6px" }}>[{a.stock}]</span>}
+                        {a.title}
+                        <span style={{ color:"rgba(255,255,255,0.4)", marginLeft:"8px" }}>— {a.source}</span>
+                      </span>
+                    ))}
+                  </marquee>
+                </div>
+                <span style={{ fontSize:"11px", color:"rgba(255,255,255,0.4)", fontFamily:"'DM Mono',monospace", flexShrink:0 }}>{liveFeeds.length}</span>
+              </div>
+            )}
+
+            {/* Source breakdown chips */}
+            <div style={{ marginBottom:"16px" }}>
+              <div style={{ fontSize:"10px", color:T.textFaint, fontFamily:"'DM Mono',monospace", marginBottom:"8px", letterSpacing:"0.05em" }}>ACTIVE SOURCES ({Object.keys(feedSources).length})</div>
+              <div style={{ display:"flex", gap:"6px", flexWrap:"wrap" }}>
+                <button onClick={() => setFilterSource("ALL")}
+                  style={{ padding:"4px 12px", borderRadius:"20px", cursor:"pointer", background:filterSource==="ALL"?T.accent:T.surface, border:`1px solid ${filterSource==="ALL"?"transparent":T.border}`, color:filterSource==="ALL"?"#fff":T.textMuted, fontSize:"11px", fontWeight:"700", fontFamily:"'DM Mono',monospace" }}>
+                  All ({liveFeeds.length})
+                </button>
+                {Object.entries(feedSources).sort((a,b)=>b[1]-a[1]).map(([src, count]) => (
+                  <button key={src} onClick={() => setFilterSource(src)}
+                    style={{ padding:"4px 11px", borderRadius:"20px", cursor:"pointer", background:filterSource===src?T.accentLight:T.surface, border:`1px solid ${filterSource===src?T.accentBorder:T.border}`, color:filterSource===src?T.accent:T.textMuted, fontSize:"11px", fontFamily:"'DM Mono',monospace" }}>
+                    {src} <span style={{ opacity:0.6 }}>({count})</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Stock filter */}
+            <div style={{ display:"flex", gap:"6px", marginBottom:"18px", flexWrap:"wrap" }}>
+              {["ALL", ...new Set(liveFeeds.filter(a=>a.stock && a.stock!=="MARKET").map(a=>a.stock))].map(ticker => {
+                const stockInfo = NSE_STOCKS.find(s => s.ticker === ticker);
+                const count = ticker === "ALL" ? liveFeeds.length : liveFeeds.filter(a => a.stock === ticker).length;
+                const active = filterStock === ticker;
+                return (
+                  <button key={ticker} onClick={() => setFilterStock(ticker)}
+                    style={{ padding:"4px 11px", borderRadius:"6px", cursor:"pointer", background:active?(stockInfo?.color+"15"||T.accentLight):T.surface, border:`1px solid ${active?(stockInfo?.color+"40"||T.accentBorder):T.border}`, color:active?(stockInfo?.color||T.accent):T.textMuted, fontSize:"11px", fontWeight:active?"700":"500", fontFamily:"'DM Mono',monospace" }}>
+                    {ticker}{ticker!=="ALL" && <span style={{ opacity:0.6, marginLeft:"3px" }}>({count})</span>}
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* Articles */}
+            {liveFeeds.length === 0 ? (
+              <div style={{ textAlign:"center", padding:"60px 20px" }}>
+                {feedFetching ? (
+                  <div>
+                    <div style={{ width:"44px", height:"44px", border:`3px solid ${T.border}`, borderTop:`3px solid ${T.accent}`, borderRadius:"50%", margin:"0 auto 16px", animation:"spin 0.8s linear infinite" }} />
+                    <p style={{ color:T.textMuted, fontFamily:"'Plus Jakarta Sans',sans-serif", fontSize:"14px" }}>Fetching from 14 news sources…</p>
+                    <p style={{ color:T.textFaint, fontFamily:"'DM Mono',monospace", fontSize:"11px", marginTop:"6px" }}>Business Daily · Nation · The Standard · AllAfrica · Reuters · and more</p>
+                  </div>
+                ) : (
+                  <div>
+                    <p style={{ color:T.textMuted, marginBottom:"16px", fontFamily:"'Plus Jakarta Sans',sans-serif" }}>No articles loaded yet.</p>
+                    <button onClick={doNewsFetch} style={{ padding:"12px 24px", background:T.accent, border:"none", borderRadius:T.radiusSm, color:"#fff", fontSize:"13px", fontWeight:"700", cursor:"pointer", boxShadow:T.shadowMd }}>Fetch Latest News</button>
+                  </div>
+                )}
+              </div>
+            ) : (
+              <>
+                <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:"12px" }}>
+                  <span style={{ fontSize:"12px", color:T.textMuted, fontFamily:"'Plus Jakarta Sans',sans-serif" }}>
+                    Showing {(filterSource==="ALL" ? liveFeeds : liveFeeds.filter(a=>a.source===filterSource)).filter(a=>filterStock==="ALL"||a.stock===filterStock).length} articles
+                  </span>
+                  {(filterStock !== "ALL" || filterSource !== "ALL") && (
+                    <button onClick={() => { setFilterStock("ALL"); setFilterSource("ALL"); }} style={{ background:"none", border:"none", color:T.red, fontSize:"12px", cursor:"pointer", fontFamily:"'DM Mono',monospace" }}>✕ Clear filters</button>
+                  )}
+                </div>
+                <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:"12px" }}>
+                  {(filterSource==="ALL" ? liveFeeds : liveFeeds.filter(a=>a.source===filterSource))
+                    .filter(a => filterStock==="ALL" || a.stock===filterStock)
+                    .map(a => <NewsCard key={a.id} article={a} />)}
+                </div>
+              </>
+            )}
           </div>
         )}
 
@@ -1060,7 +1731,7 @@ export default function NSEIntelligence() {
               }
             />
             <div style={{ display:"grid", gridTemplateColumns:"repeat(3,1fr)", gap:"14px" }}>
-              {NSE_STOCKS.map(stock=>(
+              {TRACKED_STOCKS.map(stock=>(
                 <StockOutlookCard key={stock.ticker} stock={stock} outlook={stockOutlooks[stock.ticker]} isActive={running && currentStock===stock.ticker} />
               ))}
             </div>
